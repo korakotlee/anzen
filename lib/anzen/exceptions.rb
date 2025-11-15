@@ -123,7 +123,7 @@ module Anzen
   # @api public
   class InitializationError < Error
     # @param reason [String] description of initialization problem
-    def initialize(reason = "Anzen already initialized")
+    def initialize(reason = 'Anzen already initialized')
       super(reason)
     end
   end

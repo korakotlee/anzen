@@ -41,5 +41,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Framework-agnostic architecture
 - Zero code pollution integration patterns
 
-[Unreleased]: https://github.com/songrit/anzen/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/songrit/anzen/releases/tag/v0.1.0
+[Unreleased]: https://github.com/korakotlee/anzen/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/korakotlee/anzen/releases/tag/v0.1.0
