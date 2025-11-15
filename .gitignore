@@ -1,0 +1,59 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/spec/.rspec_status
+/.rspec_status
+/tmp/
+
+# SimpleCov
+/coverage
+/.coverage
+*.lcov
+
+# RSpec
+/spec/fixtures
+
+# Bundler
+/Gemfile.lock
+*.gem
+*.gemspec.lock
+
+# Ruby
+*.rbc
+*.rb~
+*.swp
+*.swo
+*~
+.ruby-version
+.ruby-gemset
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Development
+.byebug_history
+.pry_history
