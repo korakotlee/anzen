@@ -61,7 +61,7 @@ module Anzen
         @enabled
       end
 
-            # Check for recursion pattern
+      # Check for recursion pattern
       #
       # Analyzes the current call stack to detect if any method appears
       # multiple times (direct recursion) or if there's a cycle in the call chain
