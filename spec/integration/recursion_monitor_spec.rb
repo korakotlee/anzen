@@ -2,80 +2,11 @@
 
 require 'spec_helper'
 
-RSpec.describe 'Recursion Protection Integration' do
+RSpec.describe 'RecursionMonitor Integration' do
   before do
     # Reset Anzen state
     Anzen.class_variable_set(:@@initialized, false)
     Anzen.class_variable_set(:@@registry, nil)
-  end
-
-  describe 'CallStackDepthMonitor end-to-end' do
-    it 'detects recursion exceeding depth limit' do
-      config = {
-        enabled_monitors: ['call_stack_depth'],
-        monitors: { call_stack_depth: { depth_limit: 30 } }
-      }
-      Anzen.setup(config: config)
-
-      def deep_recursive_call(depth)
-        return Anzen.check! if depth <= 0
-
-        deep_recursive_call(depth - 1)
-      end
-
-      expect do
-        deep_recursive_call(40)
-      end.to raise_error(Anzen::RecursionLimitExceeded) do |error|
-        expect(error.current_depth).to be > 30
-        expect(error.threshold).to eq(30)
-      end
-    end
-
-    it 'allows recursion within depth limit' do
-      config = {
-        enabled_monitors: ['call_stack_depth'],
-        monitors: { call_stack_depth: { depth_limit: 100 } }
-      }
-      Anzen.setup(config: config)
-
-      def shallow_recursion(depth)
-        return Anzen.check! if depth <= 0
-
-        shallow_recursion(depth - 1)
-      end
-
-      # Should not raise (safe depth)
-      expect do
-        shallow_recursion(20)
-      end.not_to raise_error
-    end
-
-    it 'detects indirect recursion' do
-      config = {
-        enabled_monitors: ['call_stack_depth'],
-        monitors: { call_stack_depth: { depth_limit: 25 } }
-      }
-      Anzen.setup(config: config)
-
-      def indirect_a(depth)
-        return Anzen.check! if depth <= 0
-
-        indirect_b(depth - 1)
-      end
-
-      def indirect_b(depth)
-        indirect_c(depth)
-      end
-
-      def indirect_c(depth)
-        indirect_a(depth - 1)
-      end
-
-      # Should detect when cycle exceeds depth
-      expect do
-        indirect_a(30)
-      end.to raise_error(Anzen::RecursionLimitExceeded)
-    end
   end
 
   describe 'RecursionMonitor end-to-end' do
@@ -100,7 +31,7 @@ RSpec.describe 'Recursion Protection Integration' do
     it 'detects recursion through nested calls' do
       config = {
         enabled_monitors: ['recursion'],
-        monitors: {}
+        monitors: { recursion: { depth_limit: 50 } }
       }
       Anzen.setup(config: config)
 

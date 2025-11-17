@@ -25,9 +25,12 @@ module Anzen
       attr_reader :violation_count
 
       # Initialize RecursionMonitor
-      def initialize
+      #
+      # @param depth_limit [Integer] maximum allowed recursion depth (default: 1000)
+      def initialize(depth_limit: 1000)
         @enabled = false
         @violation_count = 0
+        @depth_limit = depth_limit
       end
 
       # Monitor name
@@ -58,23 +61,24 @@ module Anzen
         @enabled
       end
 
-      # Check for recursion pattern
+            # Check for recursion pattern
       #
       # Analyzes the current call stack to detect if any method appears
       # multiple times (direct recursion) or if there's a cycle in the call chain
-      # (indirect recursion). Raises RecursionLimitExceeded on first detection.
-      # Does nothing if monitor is disabled.
+      # (indirect recursion). Raises RecursionLimitExceeded if recursion is
+      # detected and the call stack depth exceeds the configured limit.
       #
       # @return [nil]
-      # @raise [Anzen::RecursionLimitExceeded] if recursion pattern detected
+      # @raise [Anzen::RecursionLimitExceeded] if recursion detected and depth exceeds limit
       # @raise [Anzen::CheckFailedError] if check infrastructure fails
       def check!
         return nil unless @enabled
 
         begin
-          if recursion_detected?
+          current_depth = caller.length
+          if recursion_detected? && current_depth > @depth_limit
             @violation_count += 1
-            raise Anzen::RecursionLimitExceeded.new(current_depth, 1)
+            raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
           end
 
           nil

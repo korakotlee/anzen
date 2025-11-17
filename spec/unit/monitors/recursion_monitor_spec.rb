@@ -342,11 +342,16 @@ RSpec.describe 'Recursion Monitors' do
 
     # Tests for RecursionMonitor (pattern-based detection)
     describe Anzen::Monitors::RecursionMonitor do
-      subject(:monitor) { described_class.new }
+      subject(:monitor) { described_class.new(depth_limit: 50) }
 
       describe 'initialization' do
         it 'creates monitor with no arguments' do
           m = described_class.new
+          expect(m.enabled?).to be(false)
+        end
+
+        it 'creates monitor with depth_limit' do
+          m = described_class.new(depth_limit: 100)
           expect(m.enabled?).to be(false)
         end
 
