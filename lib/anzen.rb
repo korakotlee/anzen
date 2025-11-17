@@ -3,7 +3,133 @@
 require_relative 'anzen/version'
 require_relative 'anzen/exceptions'
 require_relative 'anzen/monitor'
+require_relative 'anzen/monitors/recursion'
+require_relative 'anzen/registry'
+require_relative 'anzen/configuration'
 
+# Anzen - Runtime safety protection gem
+#
+# Provides safety monitoring for recursion, memory, and other runtime concerns.
+# Use Anzen.setup to initialize with monitors and configuration.
+#
+# @example Basic usage
+#   Anzen.setup(config: { enabled_monitors: ['recursion'], monitors: { recursion: { depth_limit: 1000 } } })
+#   # ... your code ...
+#   Anzen.check!  # Raises if any monitor detects violation
+#
+# @api public
 module Anzen
-  # Your code goes here...
+  # @!visibility private
+  @@registry = nil
+
+  # @!visibility private
+  @@initialized = false
+
+  # Setup Anzen with configuration and monitors
+  #
+  # Initializes the registry, creates and registers default monitors, and enables specified ones.
+  # Can only be called once per process.
+  #
+  # @param config [Hash] configuration hash with keys:
+  #   - enabled_monitors (Array): list of monitor names to enable
+  #   - monitors (Hash): per-monitor configurations
+  # @raise [InitializationError] if Anzen is already initialized
+  # @raise [ConfigurationError] if configuration is invalid
+  # @return [void]
+  #
+  # @example
+  #   Anzen.setup(config: {
+  #     enabled_monitors: ['recursion'],
+  #     monitors: { recursion: { depth_limit: 500 } }
+  #   })
+  def self.setup(config: {})
+    raise Anzen::InitializationError if @@initialized
+
+    @@registry = Registry.new
+    configuration = Configuration.programmatic(config)
+
+    # Register default monitors
+    depth_limit = 1000
+    begin
+      depth_limit = configuration.monitor_config('recursion')['depth_limit']
+    rescue Anzen::ConfigurationError
+      # Use default if not configured
+    end
+
+    recursion_monitor = Monitors::RecursionMonitor.new(depth_limit: depth_limit)
+    @@registry.register(recursion_monitor)
+
+    # Enable specified monitors
+    enabled = configuration.monitor_enabled?('recursion')
+    @@registry.enable('recursion') if enabled
+
+    @@initialized = true
+  end
+
+  # Enable a monitor by name
+  #
+  # @param name [String] monitor name
+  # @raise [MonitorNotFoundError] if monitor not found
+  # @return [void]
+  def self.enable(name)
+    ensure_initialized
+    @@registry.enable(name)
+  end
+
+  # Disable a monitor by name
+  #
+  # @param name [String] monitor name
+  # @raise [MonitorNotFoundError] if monitor not found
+  # @return [void]
+  def self.disable(name)
+    ensure_initialized
+    @@registry.disable(name)
+  end
+
+  # Execute all enabled monitors' checks
+  #
+  # Runs check! on each enabled monitor. Raises immediately if any violation detected.
+  #
+  # @raise [ViolationError] subclass on first violation detected
+  # @raise [CheckFailedError] on infrastructure failure
+  # @return [nil]
+  def self.check!
+    ensure_initialized
+    @@registry.check_all!
+  end
+
+  # Return status of all monitors
+  #
+  # @return [Hash] status hash with keys:
+  #   - monitors (Array): array of monitor status hashes
+  #   - enabled_count (Integer): number of enabled monitors
+  #   - violations_total (Integer): total violations across all monitors
+  def self.status
+    ensure_initialized
+    @@registry.status
+  end
+
+  # Register a custom monitor
+  #
+  # Monitor must implement the Monitor interface.
+  #
+  # @param monitor [Anzen::Monitor] monitor instance
+  # @raise [InvalidMonitorError] if monitor doesn't implement required interface
+  # @raise [MonitorNameConflictError] if monitor name already registered
+  # @return [void]
+  def self.register_monitor(monitor)
+    ensure_initialized
+    @@registry.register(monitor)
+  end
+
+  class << self
+    private
+
+    # Ensure Anzen is initialized
+    #
+    # @raise [InitializationError] if not initialized
+    def ensure_initialized
+      raise Anzen::InitializationError, 'Anzen not initialized. Call Anzen.setup first.' unless @@initialized
+    end
+  end
 end

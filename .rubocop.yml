@@ -1,0 +1,57 @@
+# RuboCop configuration for Anzen gem
+# Strict mode with selective exceptions for architectural patterns
+
+AllCops:
+  TargetRubyVersion: 3.0
+  NewCops: enable
+  SuggestExtensions: false
+
+# Disable ClassVars cop: Anzen uses class variables as process-level singleton state
+# This is the appropriate pattern for a module-level safety system that maintains
+# a single registry across the entire process.
+Style/ClassVars:
+  Enabled: false
+
+# Require frozen string literals
+Style/FrozenStringLiteralComment:
+  Enabled: true
+
+# Enforce single quotes except where necessary
+Style/StringLiterals:
+  Enabled: true
+  EnforcedStyle: single_quotes
+
+# Enforce double quotes for interpolation
+Style/StringLiteralsInInterpolation:
+  Enabled: true
+  EnforcedStyle: double_quotes
+
+# Require all methods to be documented (public API)
+Style/Documentation:
+  Enabled: true
+  Exclude:
+    - "spec/**/*"
+    - "bin/**/*"
+
+# Length limits
+Metrics/ClassLength:
+  Enabled: true
+  Max: 200
+
+Metrics/MethodLength:
+  Enabled: true
+  Max: 30
+
+# Layout
+Layout/LineLength:
+  Enabled: true
+  Max: 120
+
+# Naming
+Naming/MethodName:
+  Enabled: true
+  EnforcedStyle: snake_case
+
+# Security
+Security/Eval:
+  Enabled: true
