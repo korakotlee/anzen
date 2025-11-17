@@ -31,6 +31,7 @@ module Anzen
         @enabled = false
         @violation_count = 0
         @depth_limit = depth_limit
+        @last_check = nil
       end
 
       # Monitor name
@@ -76,6 +77,8 @@ module Anzen
 
         begin
           current_depth = caller.length
+          @last_check = Time.now
+
           if recursion_detected? && current_depth > @depth_limit
             @violation_count += 1
             raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
@@ -91,12 +94,13 @@ module Anzen
 
       # Return current status
       #
-      # @return [Hash] status hash with keys: name, enabled, violations
+      # @return [Hash] status hash with keys: name, enabled, violations, last_check
       def status
         {
           name: name,
           enabled: @enabled,
-          violations: @violation_count
+          violations: @violation_count,
+          last_check: @last_check
         }
       end
 
