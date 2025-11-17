@@ -11,6 +11,9 @@ module Anzen
   #
   # @api public
   class Configuration
+    # Known monitor names
+    KNOWN_MONITORS = %w[call_stack_depth recursion memory].freeze
+    private_constant :KNOWN_MONITORS
     # Load configuration from environment variable
     #
     # Expects ANZEN_CONFIG to contain JSON or YAML config.
@@ -18,9 +21,10 @@ module Anzen
     # @return [Configuration] configuration instance
     # @raise [ConfigurationError] if config is invalid
     def self.from_env
-      config_str = ENV['ANZEN_CONFIG']
+      config_str = ENV.fetch('ANZEN_CONFIG', nil)
       raise Anzen::ConfigurationError, 'ANZEN_CONFIG not set' unless config_str
 
+      config = nil
       begin
         # Try JSON first
         config = JSON.parse(config_str)
@@ -28,6 +32,9 @@ module Anzen
         # Fall back to YAML
         config = YAML.safe_load(config_str)
       end
+
+      # Ensure we got a hash back
+      raise Anzen::ConfigurationError, 'ANZEN_CONFIG must contain a valid JSON or YAML hash' unless config.is_a?(Hash)
 
       new(config)
     end
@@ -127,6 +134,13 @@ module Anzen
       # monitors should be hash if present and non-nil
       if normalized.key?('monitors') && !normalized['monitors'].nil? && !normalized['monitors'].is_a?(Hash)
         raise Anzen::ConfigurationError, 'monitors must be a hash'
+      end
+
+      # Check that all enabled monitors are known
+      enabled_monitors = normalized['enabled_monitors'] || []
+      unknown_monitors = enabled_monitors - KNOWN_MONITORS
+      unless unknown_monitors.empty?
+        raise Anzen::ConfigurationError, "Unknown monitor(s): #{unknown_monitors.join(", ")}"
       end
 
       # Validate monitor configs

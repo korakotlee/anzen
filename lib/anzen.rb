@@ -48,7 +48,15 @@ module Anzen
     raise Anzen::InitializationError if @@initialized
 
     @@registry = Registry.new
-    configuration = Configuration.programmatic(config)
+
+    # Determine configuration source
+    configuration = if config.key?(:config_file)
+                      Configuration.from_file(config[:config_file])
+                    elsif ENV['ANZEN_CONFIG']
+                      Configuration.from_env
+                    else
+                      Configuration.programmatic(config)
+                    end
 
     # Register CallStackDepthMonitor
     depth_limit = 1000
