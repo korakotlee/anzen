@@ -43,6 +43,11 @@ RSpec.configure do |config|
   config.profile_examples = 10
   config.order = :random
   Kernel.srand config.seed
+
+  # Reset Anzen before each test to ensure clean state
+  config.before(:each) do
+    Anzen._reset_for_testing
+  end
 end
 
 # Load the gem

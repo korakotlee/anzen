@@ -118,7 +118,10 @@ module Anzen
         {
           name: name,
           enabled: @enabled,
-          thresholds: { limit_mb: @limit_mb },
+          thresholds: {
+            limit_mb: @limit_mb,
+            sampling_interval_ms: @sampling_interval_ms
+          },
           last_check: @last_check_time,
           violations: @violation_count
         }

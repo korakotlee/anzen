@@ -94,13 +94,16 @@ module Anzen
 
       # Return current status
       #
-      # @return [Hash] status hash with keys: name, enabled, violations, last_check
+      # @return [Hash] status hash with keys: name, enabled, thresholds, last_check, violations
       def status
         {
           name: name,
           enabled: @enabled,
-          violations: @violation_count,
-          last_check: @last_check
+          thresholds: {
+            depth_limit: @depth_limit
+          },
+          last_check: @last_check,
+          violations: @violation_count
         }
       end
 

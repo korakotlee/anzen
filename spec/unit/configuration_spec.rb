@@ -8,7 +8,7 @@ RSpec.describe Anzen::Configuration do
   describe '.from_env' do
     it 'loads config from JSON environment variable' do
       config_json = { enabled_monitors: ['recursion'], monitors: { recursion: { depth_limit: 500 } } }.to_json
-      allow(ENV).to receive(:[]).with('ANZEN_CONFIG').and_return(config_json)
+      allow(ENV).to receive(:fetch).with('ANZEN_CONFIG', nil).and_return(config_json)
 
       config = described_class.from_env
       expect(config.get('monitors.recursion.depth_limit')).to eq(500)
@@ -16,14 +16,14 @@ RSpec.describe Anzen::Configuration do
 
     it 'loads config from YAML environment variable' do
       config_yaml = "enabled_monitors:\n  - recursion\nmonitors:\n  recursion:\n    depth_limit: 500"
-      allow(ENV).to receive(:[]).with('ANZEN_CONFIG').and_return(config_yaml)
+      allow(ENV).to receive(:fetch).with('ANZEN_CONFIG', nil).and_return(config_yaml)
 
       config = described_class.from_env
       expect(config.get('monitors.recursion.depth_limit')).to eq(500)
     end
 
     it 'raises ConfigurationError if ANZEN_CONFIG not set' do
-      allow(ENV).to receive(:[]).with('ANZEN_CONFIG').and_return(nil)
+      allow(ENV).to receive(:fetch).with('ANZEN_CONFIG', nil).and_return(nil)
 
       expect do
         described_class.from_env

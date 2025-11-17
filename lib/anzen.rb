@@ -27,23 +27,45 @@ module Anzen
   # @!visibility private
   @@initialized = false
 
+  # @!visibility private
+  @@setup_at = nil
+
+  # Reset Anzen state (for testing only)
+  #
+  # @private
+  # @api private
+  def self._reset_for_testing
+    @@registry = nil
+    @@initialized = false
+    @@setup_at = nil
+  end
+
   # Setup Anzen with configuration and monitors
   #
-  # Initializes the registry, creates and registers default monitors, and enables specified ones.
+  # Initializes the registry, creates and registers default monitors (call_stack_depth, recursion, memory),
+  # and enables specified ones based on configuration sources (programmatic, env var, or file).
   # Can only be called once per process.
   #
   # @param config [Hash] configuration hash with keys:
+  #   - config_file (String): path to YAML/JSON config file (optional)
   #   - enabled_monitors (Array): list of monitor names to enable
   #   - monitors (Hash): per-monitor configurations
   # @raise [InitializationError] if Anzen is already initialized
   # @raise [ConfigurationError] if configuration is invalid
   # @return [void]
   #
-  # @example
+  # @example Programmatic setup
   #   Anzen.setup(config: {
   #     enabled_monitors: ['recursion'],
   #     monitors: { recursion: { depth_limit: 500 } }
   #   })
+  #
+  # @example Environment variable setup
+  #   ENV['ANZEN_CONFIG'] = '{"enabled_monitors": ["memory"], "monitors": {"memory": {"limit_mb": 1024}}}'
+  #   Anzen.setup  # Uses env var config
+  #
+  # @example File-based setup
+  #   Anzen.setup(config: { config_file: 'config/anzen.yml' })
   def self.setup(config: {})
     raise Anzen::InitializationError if @@initialized
 
@@ -102,6 +124,7 @@ module Anzen
     @@registry.enable('recursion') if configuration.monitor_enabled?('recursion')
     @@registry.enable('memory') if configuration.monitor_enabled?('memory')
 
+    @@setup_at = Time.now
     @@initialized = true
   end
 
@@ -140,12 +163,25 @@ module Anzen
   # Return status of all monitors
   #
   # @return [Hash] status hash with keys:
-  #   - monitors (Array): array of monitor status hashes
+  #   - enabled (Array): array of enabled monitor names
   #   - enabled_count (Integer): number of enabled monitors
+  #   - setup_at (Time): when Anzen was initialized
+  #   - monitors (Array): array of monitor status hashes with keys: name, enabled, thresholds, last_check, violations
   #   - violations_total (Integer): total violations across all monitors
   def self.status
     ensure_initialized
-    @@registry.status
+    registry_status = @@registry.status
+
+    # Transform registry status to API contract format
+    enabled_monitor_names = @@registry.instance_variable_get(:@enabled_monitors).to_a
+
+    {
+      monitors: registry_status[:monitors],
+      enabled: enabled_monitor_names,
+      enabled_count: registry_status[:enabled_count],
+      violations_total: registry_status[:violations_total],
+      setup_at: @@setup_at
+    }
   end
 
   # Register a custom monitor
