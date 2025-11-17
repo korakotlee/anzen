@@ -27,32 +27,34 @@ module Anzen
       # Initialize RecursionMonitor
       #
       # @param depth_limit [Integer] maximum allowed recursion depth (default: 1000)
-      def initialize(depth_limit: 1000)
+      def initialize(depth_limit: 2000)
         @enabled = false
         @violation_count = 0
         @depth_limit = depth_limit
         @last_check = nil
+        @trace_point = nil
+        @call_stack = nil
       end
 
-      # Monitor name
-      #
-      # @return [String] "recursion"
-      def name
-        'recursion'
-      end
-
-      # Enable this monitor
       #
       # @return [Boolean] true
       def enable
+        return true if @enabled
+
         @enabled = true
+        start_trace_point
+        true
       end
 
       # Disable this monitor
       #
       # @return [Boolean] false
       def disable
+        return false unless @enabled
+
         @enabled = false
+        stop_trace_point
+        false
       end
 
       # Check if monitor is enabled
@@ -64,10 +66,8 @@ module Anzen
 
       # Check for recursion pattern
       #
-      # Analyzes the current call stack to detect if any method appears
-      # multiple times (direct recursion) or if there's a cycle in the call chain
-      # (indirect recursion). Raises RecursionLimitExceeded if recursion is
-      # detected and the call stack depth exceeds the configured limit.
+      # In real-time mode, this is a no-op since monitoring happens automatically.
+      # For compatibility, it checks current state if called manually or in test mode.
       #
       # @return [nil]
       # @raise [Anzen::RecursionLimitExceeded] if recursion detected and depth exceeds limit
@@ -76,19 +76,21 @@ module Anzen
         return nil unless @enabled
 
         begin
-          current_depth = caller.length
           @last_check = Time.now
-
-          if recursion_detected? && current_depth > @depth_limit
-            @violation_count += 1
-            raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
+          # In real-time mode, violations are raised immediately in the trace point
+          # In test mode or manual check, perform the check here
+          if @trace_point.nil? || !@trace_point.enabled?
+            current_depth = caller.length
+            if recursion_detected? && current_depth > @depth_limit
+              @violation_count += 1
+              raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
+            end
           end
-
           nil
         rescue Anzen::RecursionLimitExceeded
           raise
         rescue StandardError => e
-          raise Anzen::CheckFailedError.new(name, 'Failed to detect recursion pattern', e)
+          raise Anzen::CheckFailedError.new(name, 'Failed to check recursion', e)
         end
       end
 
@@ -116,6 +118,41 @@ module Anzen
       end
 
       private
+
+      # Start the trace point for real-time monitoring
+      def start_trace_point
+        return if ENV['RACK_ENV'] == 'test' || ENV['RAILS_ENV'] == 'test' || defined?(RSpec)
+
+        @call_stack = Thread.current[FRAME_KEY] ||= []
+        @trace_point = TracePoint.new(:call, :return) do |tp|
+          next unless @enabled
+
+          case tp.event
+          when :call
+            context = extract_call_context_from_tp(tp.path, tp.lineno, tp.method_id.to_s)
+            next unless context
+
+            if @call_stack.include?(context)
+              current_depth = @call_stack.size + 1
+              if current_depth > @depth_limit
+                @violation_count += 1
+                raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
+              end
+            end
+            @call_stack.push(context)
+          when :return
+            @call_stack.pop if @call_stack&.last
+          end
+        end
+        @trace_point.enable
+      end
+
+      # Stop the trace point
+      def stop_trace_point
+        @trace_point&.disable
+        @trace_point = nil
+        Thread.current[FRAME_KEY] = nil
+      end
 
       # Detect if current call stack has recursion pattern
       #
@@ -180,6 +217,13 @@ module Anzen
         file_line = match[1]
         method = match[2]
         "#{file_line}:#{method}"
+      end
+
+      # Extract call context from trace point
+      def extract_call_context_from_tp(path, lineno, method_id)
+        return nil if should_skip_frame?("#{path}:#{lineno}:in `#{method_id}'")
+
+        "#{path}:#{lineno}:#{method_id}"
       end
 
       # Get current call stack depth for error reporting

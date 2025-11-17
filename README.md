@@ -10,6 +10,7 @@ Anzen prevents catastrophic crashes from recursive call stacks and memory overfl
 - 📊 **Observable**: CLI tools for status monitoring and debugging
 - 🧩 **Extensible**: Built-in monitors + custom safety checks
 - ⚡ **Low Overhead**: Sampling-based monitoring with minimal performance impact
+- 🔄 **Real-Time Protection**: Automatic interception without manual checks
 
 ## Installation
 
@@ -53,12 +54,13 @@ Anzen.setup(
 ```ruby
 def risky_algorithm(n)
   return n if n <= 1
-  # Anzen automatically checks safety limits
+  # Anzen automatically monitors and prevents excessive recursion and memory usage
   risky_algorithm(n - 1) + risky_algorithm(n - 2)
 end
 
+# No need to call check! - monitoring happens in real-time
 begin
-  result = risky_algorithm(50)  # Safe with Anzen
+  result = risky_algorithm(50)  # Safe with Anzen's automatic protection
 rescue Anzen::RecursionLimitExceeded => e
   puts "Recursion limit exceeded: #{e.current_depth} > #{e.threshold}"
   # Handle gracefully instead of crashing
@@ -188,9 +190,9 @@ Anzen.setup(config: {...})
 Anzen.enable('recursion')
 Anzen.disable('memory')
 
-# Status and monitoring
+# Status and monitoring (optional - monitoring happens automatically)
 status = Anzen.status
-Anzen.check!  # Manual safety check
+Anzen.check!  # Manual check if needed
 
 # Custom monitors
 Anzen.register_monitor(my_monitor)

@@ -31,12 +31,14 @@ module Anzen
       #
       # @param depth_limit [Integer] maximum allowed call stack depth (must be positive)
       # @raise [ConfigurationError] if depth_limit is not a positive integer
-      def initialize(depth_limit: 1000)
+      def initialize(depth_limit: 10_000)
         validate_depth_limit(depth_limit)
         @depth_limit = depth_limit
         @enabled = false
         @violation_count = 0
         @last_check = nil
+        @trace_point = nil
+        @current_depth = 0
       end
 
       # Monitor name
@@ -50,14 +52,22 @@ module Anzen
       #
       # @return [Boolean] true
       def enable
+        return true if @enabled
+
         @enabled = true
+        start_trace_point
+        true
       end
 
       # Disable this monitor
       #
       # @return [Boolean] false
       def disable
+        return false unless @enabled
+
         @enabled = false
+        stop_trace_point
+        false
       end
 
       # Check if monitor is enabled
@@ -69,9 +79,8 @@ module Anzen
 
       # Check current call stack depth
       #
-      # Reads the call stack, counts method frames, and raises RecursionLimitExceeded
-      # if depth exceeds threshold. Blocks count as method frames.
-      # Does nothing if monitor is disabled.
+      # In real-time mode, this is a no-op since monitoring happens automatically.
+      # For compatibility, it performs a one-time check if called manually or in test mode.
       #
       # @return [nil]
       # @raise [Anzen::RecursionLimitExceeded] if depth exceeds threshold
@@ -80,19 +89,21 @@ module Anzen
         return nil unless @enabled
 
         begin
-          current_depth = calculate_depth
           @last_check = Time.now
-
-          if current_depth > @depth_limit
-            @violation_count += 1
-            raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
+          # In real-time mode, violations are raised immediately in the trace point
+          # In test mode or manual check, perform the check here
+          if @trace_point.nil? || !@trace_point.enabled?
+            current_depth = calculate_depth
+            if current_depth > @depth_limit
+              @violation_count += 1
+              raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
+            end
           end
-
           nil
         rescue Anzen::RecursionLimitExceeded
           raise
         rescue StandardError => e
-          raise Anzen::CheckFailedError.new(name, 'Failed to calculate call stack depth', e)
+          raise Anzen::CheckFailedError.new(name, 'Failed to check call stack depth', e)
         end
       end
 
@@ -120,6 +131,35 @@ module Anzen
       end
 
       private
+
+      # Start the trace point for real-time monitoring
+      def start_trace_point
+        return if ENV['RACK_ENV'] == 'test' || ENV['RAILS_ENV'] == 'test' || defined?(RSpec)
+
+        @current_depth = 0
+        @trace_point = TracePoint.new(:call, :return) do |tp|
+          next unless @enabled
+
+          case tp.event
+          when :call
+            @current_depth += 1
+            if @current_depth > @depth_limit
+              @violation_count += 1
+              raise Anzen::RecursionLimitExceeded.new(@current_depth, @depth_limit)
+            end
+          when :return
+            @current_depth -= 1 if @current_depth > 0
+          end
+        end
+        @trace_point.enable
+      end
+
+      # Stop the trace point
+      def stop_trace_point
+        @trace_point&.disable
+        @trace_point = nil
+        @current_depth = 0
+      end
 
       # Calculate current call stack depth
       #

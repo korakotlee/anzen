@@ -54,6 +54,7 @@ module Anzen
         @last_check_time = nil
         @current_rss_mb = 0.0
         @violation_count = 0
+        @monitor_thread = nil
 
         validate_configuration!
       end
@@ -62,14 +63,22 @@ module Anzen
       #
       # @return [Boolean] true
       def enable
+        return true if @enabled
+
         @enabled = true
+        start_monitoring_thread
+        true
       end
 
       # Disable this monitor
       #
       # @return [Boolean] false
       def disable
+        return false unless @enabled
+
         @enabled = false
+        stop_monitoring_thread
+        false
       end
 
       # Check if monitor is enabled
@@ -81,10 +90,8 @@ module Anzen
 
       # Check for memory limit violation
       #
-      # Reads current process RSS memory and compares to configured limit.
-      # Only performs check if sampling interval has elapsed since last check.
-      # Raises MemoryLimitExceeded if memory usage exceeds threshold.
-      # Does nothing if monitor is disabled.
+      # In real-time mode, this is a no-op since monitoring happens automatically in a background thread.
+      # For compatibility, it performs a one-time check if called manually.
       #
       # @return [nil]
       # @raise [Anzen::MemoryLimitExceeded] if memory usage exceeds threshold
@@ -93,16 +100,7 @@ module Anzen
         return nil unless @enabled
 
         begin
-          if should_check?
-            @current_rss_mb = read_process_memory_mb
-            @last_check_time = Time.now
-
-            if @current_rss_mb > @limit_mb
-              @violation_count += 1
-              raise Anzen::MemoryLimitExceeded.new(@current_rss_mb, @limit_mb)
-            end
-          end
-
+          perform_memory_check
           nil
         rescue Anzen::MemoryLimitExceeded
           raise
@@ -137,6 +135,42 @@ module Anzen
 
       private
 
+      private
+
+      # Start background monitoring thread
+      def start_monitoring_thread
+        @monitor_thread = Thread.new do
+          loop do
+            break unless @enabled
+
+            perform_memory_check
+            sleep(@sampling_interval_ms / 1000.0)
+          end
+        end
+        @monitor_thread.abort_on_exception = true
+      end
+
+      # Stop monitoring thread
+      def stop_monitoring_thread
+        @monitor_thread&.kill
+        @monitor_thread = nil
+      end
+
+      # Perform the actual memory check
+      def perform_memory_check
+        return unless @enabled
+
+        return unless should_check?
+
+        @current_rss_mb = read_process_memory_mb
+        @last_check_time = Time.now
+
+        return unless @current_rss_mb > @limit_mb
+
+        @violation_count += 1
+        raise Anzen::MemoryLimitExceeded.new(@current_rss_mb, @limit_mb)
+      end
+
       # Validate configuration parameters
       #
       # @raise [Anzen::ConfigurationError] if configuration is invalid
@@ -149,6 +183,79 @@ module Anzen
 
         raise Anzen::ConfigurationError,
               "sampling_interval_ms must be a non-negative integer, got: #{@sampling_interval_ms.inspect}"
+      end
+
+      # Check if enough time has elapsed since last check
+      #
+      # @return [Boolean] true if should perform check
+      def should_check?
+        return true if @last_check_time.nil?
+
+        elapsed_ms = (Time.now - @last_check_time) * 1000
+        elapsed_ms >= @sampling_interval_ms
+      end
+
+      # Read current process memory usage in MB
+      #
+      # Attempts to read RSS from /proc/[pid]/status (Linux) or falls back to
+      # parsing `ps` command output for cross-platform compatibility.
+      #
+      # @return [Float] memory usage in MB
+      # @raise [StandardError] if memory reading fails
+      def read_process_memory_mb
+        pid = Process.pid
+
+        # Try Linux /proc filesystem first (most efficient)
+        return read_memory_from_proc(pid) if File.exist?("/proc/#{pid}/status")
+
+        # Fallback to ps command (cross-platform)
+        read_memory_from_ps(pid)
+      end
+
+      # Read memory from Linux /proc/[pid]/status
+      #
+      # @param pid [Integer] process ID
+      # @return [Float] memory in MB
+      def read_memory_from_proc(pid)
+        status_file = "/proc/#{pid}/status"
+        content = File.read(status_file)
+
+        # Find VmRSS line: "VmRSS:    12345 kB"
+        vmrss_match = content.match(/^VmRSS:\s+(\d+)\s+kB/)
+        raise "Could not find VmRSS in #{status_file}" unless vmrss_match
+
+        kb = vmrss_match[1].to_i
+        kb / 1024.0 # Convert to MB
+      end
+
+      # Read memory using ps command (fallback for non-Linux systems)
+      #
+      # @param pid [Integer] process ID
+      # @return [Float] memory in MB
+      def read_memory_from_ps(pid)
+        # Use ps to get RSS in KB, then convert to MB
+        # Format: "PID RSS" where RSS is in KB
+        output, status = run_ps_command(pid)
+        raise "ps command failed: #{status.exitstatus}" unless status.success?
+
+        lines = output.strip.split("\n")
+        raise "ps output incomplete for PID #{pid}" if lines.length < 2
+
+        # Second line contains the data
+        fields = lines[1].strip.split
+        raise "ps output format unexpected: #{lines[1]}" if fields.length < 2
+
+        rss_kb = fields[1].to_i
+        rss_kb / 1024.0 # Convert to MB
+      end
+
+      # Execute ps command (extracted for testability)
+      #
+      # @param pid [Integer] process ID
+      # @return [Array<String, Process::Status>] output and status
+      def run_ps_command(pid)
+        output = `ps -o pid,rss -p #{pid} 2>/dev/null`
+        [output, $?]
       end
 
       # Check if enough time has elapsed since last check

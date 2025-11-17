@@ -81,7 +81,7 @@ module Anzen
                     end
 
     # Register CallStackDepthMonitor
-    depth_limit = 1000
+    depth_limit = 10_000
     begin
       depth_limit = configuration.monitor_config('call_stack_depth')['depth_limit']
     rescue Anzen::ConfigurationError
@@ -98,7 +98,7 @@ module Anzen
     rescue Anzen::ConfigurationError
       # Use defaults if not configured
     end
-    depth_limit = recursion_config['depth_limit'] || 1000
+    depth_limit = recursion_config['depth_limit'] || 10_000
 
     recursion_monitor = Monitors::RecursionMonitor.new(depth_limit: depth_limit)
     @@registry.register(recursion_monitor)
