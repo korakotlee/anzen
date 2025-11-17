@@ -3,6 +3,7 @@
 require_relative 'anzen/version'
 require_relative 'anzen/exceptions'
 require_relative 'anzen/monitor'
+require_relative 'anzen/monitors/call_stack_depth'
 require_relative 'anzen/monitors/recursion'
 require_relative 'anzen/registry'
 require_relative 'anzen/configuration'
@@ -48,20 +49,24 @@ module Anzen
     @@registry = Registry.new
     configuration = Configuration.programmatic(config)
 
-    # Register default monitors
+    # Register CallStackDepthMonitor
     depth_limit = 1000
     begin
-      depth_limit = configuration.monitor_config('recursion')['depth_limit']
+      depth_limit = configuration.monitor_config('call_stack_depth')['depth_limit']
     rescue Anzen::ConfigurationError
       # Use default if not configured
     end
 
-    recursion_monitor = Monitors::RecursionMonitor.new(depth_limit: depth_limit)
+    call_stack_depth_monitor = Monitors::CallStackDepthMonitor.new(depth_limit: depth_limit)
+    @@registry.register(call_stack_depth_monitor)
+
+    # Register RecursionMonitor
+    recursion_monitor = Monitors::RecursionMonitor.new
     @@registry.register(recursion_monitor)
 
     # Enable specified monitors
-    enabled = configuration.monitor_enabled?('recursion')
-    @@registry.enable('recursion') if enabled
+    @@registry.enable('call_stack_depth') if configuration.monitor_enabled?('call_stack_depth')
+    @@registry.enable('recursion') if configuration.monitor_enabled?('recursion')
 
     @@initialized = true
   end

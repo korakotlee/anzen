@@ -30,6 +30,16 @@ RSpec.describe Anzen do
       end.to raise_error(Anzen::InitializationError)
     end
 
+    it 'registers both recursion monitors' do
+      config = { enabled_monitors: [] }
+      Anzen.setup(config: config)
+
+      status = Anzen.status
+      monitor_names = status[:monitors].map { |m| m[:name] }
+      expect(monitor_names).to include('call_stack_depth')
+      expect(monitor_names).to include('recursion')
+    end
+
     it 'registers recursion monitor' do
       config = { enabled_monitors: ['recursion'] }
       Anzen.setup(config: config)
@@ -52,21 +62,21 @@ RSpec.describe Anzen do
       Anzen.setup(config: config)
 
       status = Anzen.status
-      recursion_status = status[:monitors].find { |m| m[:name] == 'recursion' }
+      call_stack_depth_status = status[:monitors].find { |m| m[:name] == 'call_stack_depth' }
       # Default is 1000
-      expect(recursion_status[:thresholds][:depth_limit]).to eq(1000)
+      expect(call_stack_depth_status[:thresholds][:depth_limit]).to eq(1000)
     end
 
     it 'uses configured depth_limit' do
       config = {
         enabled_monitors: [],
-        monitors: { recursion: { depth_limit: 500 } }
+        monitors: { call_stack_depth: { depth_limit: 500 } }
       }
       Anzen.setup(config: config)
 
       status = Anzen.status
-      recursion_status = status[:monitors].find { |m| m[:name] == 'recursion' }
-      expect(recursion_status[:thresholds][:depth_limit]).to eq(500)
+      call_stack_depth_status = status[:monitors].find { |m| m[:name] == 'call_stack_depth' }
+      expect(call_stack_depth_status[:thresholds][:depth_limit]).to eq(500)
     end
   end
 

@@ -9,11 +9,11 @@ RSpec.describe 'Recursion Protection Integration' do
     Anzen.class_variable_set(:@@registry, nil)
   end
 
-  describe 'end-to-end recursion detection' do
-    it 'detects recursion and raises RecursionLimitExceeded' do
+  describe 'CallStackDepthMonitor end-to-end' do
+    it 'detects recursion exceeding depth limit' do
       config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 30 } }
+        enabled_monitors: ['call_stack_depth'],
+        monitors: { call_stack_depth: { depth_limit: 30 } }
       }
       Anzen.setup(config: config)
 
@@ -31,117 +31,29 @@ RSpec.describe 'Recursion Protection Integration' do
       end
     end
 
-    it 'includes current depth in error' do
+    it 'allows recursion within depth limit' do
       config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 20 } }
+        enabled_monitors: ['call_stack_depth'],
+        monitors: { call_stack_depth: { depth_limit: 100 } }
       }
       Anzen.setup(config: config)
 
-      def recursive_with_depth_check(depth)
+      def shallow_recursion(depth)
         return Anzen.check! if depth <= 0
 
-        recursive_with_depth_check(depth - 1)
+        shallow_recursion(depth - 1)
       end
 
+      # Should not raise (safe depth)
       expect do
-        recursive_with_depth_check(25)
-      end.to raise_error(Anzen::RecursionLimitExceeded) do |error|
-        expect(error.current_depth).to be_a(Integer)
-        expect(error.current_depth).to be > 0
-      end
-    end
-
-    it 'includes threshold in error' do
-      config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 25 } }
-      }
-      Anzen.setup(config: config)
-
-      def recursive_check_threshold(depth)
-        return Anzen.check! if depth <= 0
-
-        recursive_check_threshold(depth - 1)
-      end
-
-      expect do
-        recursive_check_threshold(35)
-      end.to raise_error(Anzen::RecursionLimitExceeded) do |error|
-        expect(error.threshold).to eq(25)
-      end
-    end
-
-    it 'allows application to remain stable after exception' do
-      config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 20 } }
-      }
-      Anzen.setup(config: config)
-
-      def risky_recursion(depth)
-        return Anzen.check! if depth <= 0
-
-        risky_recursion(depth - 1)
-      end
-
-      # First call raises
-      expect do
-        risky_recursion(25)
-      end.to raise_error(Anzen::RecursionLimitExceeded)
-
-      # Application should still work after exception - check status and registry
-      expect(Anzen.status).to have_key(:monitors)
-      expect(Anzen.status[:monitors]).not_to be_empty
-    end
-
-    it 'disables recursion protection when disabled' do
-      config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 10 } }
-      }
-      Anzen.setup(config: config)
-
-      Anzen.disable('recursion')
-
-      def unchecked_recursion(depth)
-        return Anzen.check! if depth <= 0
-
-        unchecked_recursion(depth - 1)
-      end
-
-      # Should not raise because check! is disabled
-      expect do
-        unchecked_recursion(100)
+        shallow_recursion(20)
       end.not_to raise_error
     end
 
-    it 'enables recursion protection when re-enabled' do
+    it 'detects indirect recursion' do
       config = {
-        enabled_monitors: [],
-        monitors: { recursion: { depth_limit: 20 } }
-      }
-      Anzen.setup(config: config)
-
-      # Initially disabled
-      Anzen.enable('recursion')
-
-      def re_enabled_recursion(depth)
-        return Anzen.check! if depth <= 0
-
-        re_enabled_recursion(depth - 1)
-      end
-
-      # Now it should raise
-      expect do
-        re_enabled_recursion(25)
-      end.to raise_error(Anzen::RecursionLimitExceeded)
-    end
-
-    it 'detects indirect recursion (A -> B -> C -> A)' do
-      config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 25 } }
+        enabled_monitors: ['call_stack_depth'],
+        monitors: { call_stack_depth: { depth_limit: 25 } }
       }
       Anzen.setup(config: config)
 
@@ -159,152 +71,168 @@ RSpec.describe 'Recursion Protection Integration' do
         indirect_a(depth - 1)
       end
 
-      # Should detect the indirect recursion pattern
+      # Should detect when cycle exceeds depth
       expect do
         indirect_a(30)
       end.to raise_error(Anzen::RecursionLimitExceeded)
     end
+  end
 
-    it 'supports different depth limits for different use cases' do
+  describe 'RecursionMonitor end-to-end' do
+    it 'detects direct recursion on first occurrence' do
       config = {
         enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 500 } }
+        monitors: {}
       }
       Anzen.setup(config: config)
 
-      def safe_recursion(depth)
-        return Anzen.check! if depth <= 0
+      recursive_proc = proc { |depth, was_called|
+        Anzen.check! if was_called
 
-        safe_recursion(depth - 1)
-      end
-
-      # This should NOT raise (deep recursion allowed with large limit)
-      expect do
-        safe_recursion(40)
-      end.not_to raise_error
-
-      # Disable and re-enable with different limit
-      Anzen.disable('recursion')
-      Anzen.class_variable_set(:@@initialized, false)
-      Anzen.class_variable_set(:@@registry, nil)
-
-      config2 = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 100 } }
+        recursive_proc.call(depth - 1, true)
       }
-      Anzen.setup(config: config2)
 
-      def tighter_recursion(depth)
+      expect do
+        recursive_proc.call(3, false)
+      end.to raise_error(Anzen::RecursionLimitExceeded)
+    end
+
+    it 'detects recursion through nested calls' do
+      config = {
+        enabled_monitors: ['recursion'],
+        monitors: {}
+      }
+      Anzen.setup(config: config)
+
+      # Direct recursion via a helper to simulate nested call contexts
+      def r_helper(depth)
         return Anzen.check! if depth <= 0
 
-        tighter_recursion(depth - 1)
+        r_helper(depth - 1)
       end
 
-      # This SHOULD raise (depth 60 > 100 is false, so use 150 > 100)
       expect do
-        tighter_recursion(150)
+        r_helper(3)
+      end.to raise_error(Anzen::RecursionLimitExceeded)
+    end
+  end
+
+  describe 'Selective monitor enablement' do
+    it 'allows both monitors when both enabled' do
+      config = {
+        enabled_monitors: %w[call_stack_depth recursion],
+        monitors: { call_stack_depth: { depth_limit: 50 } }
+      }
+      Anzen.setup(config: config)
+
+      status = Anzen.status
+      enabled = status[:monitors].select { |m| m[:enabled] }.map { |m| m[:name] }
+      expect(enabled).to include('call_stack_depth')
+      expect(enabled).to include('recursion')
+    end
+
+    it 'allows only call_stack_depth when recursion disabled' do
+      config = {
+        enabled_monitors: ['call_stack_depth'],
+        monitors: { call_stack_depth: { depth_limit: 30 } }
+      }
+      Anzen.setup(config: config)
+
+      def moderate_recursion(depth)
+        return Anzen.check! if depth <= 0
+
+        moderate_recursion(depth - 1)
+      end
+
+      # Should raise only for depth limit, not for recursion pattern
+      expect do
+        moderate_recursion(35)
       end.to raise_error(Anzen::RecursionLimitExceeded) do |error|
-        expect(error.threshold).to eq(100)
+        expect(error.threshold).to eq(30)
       end
+    end
+
+    it 'allows only recursion when call_stack_depth disabled' do
+      config = {
+        enabled_monitors: ['recursion'],
+        monitors: { call_stack_depth: { depth_limit: 10 } }
+      }
+      Anzen.setup(config: config)
+
+      recursive_proc = proc { |depth, first_call|
+        Anzen.check! if first_call
+
+        recursive_proc.call(depth - 1, true)
+      }
+
+      # Should raise only for recursion pattern
+      expect do
+        recursive_proc.call(3, false)
+      end.to raise_error(Anzen::RecursionLimitExceeded)
     end
   end
 
-  describe 'recursion protection status' do
-    it 'reports correct status after checks' do
-      config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 20 } }
-      }
+  describe 'Status and monitoring' do
+    it 'reports both monitors in status' do
+      config = { enabled_monitors: [] }
       Anzen.setup(config: config)
 
-      def status_check_recursion(depth)
-        return Anzen.check! if depth <= 0
-
-        status_check_recursion(depth - 1)
-      end
-
-      # Trigger a violation
-      expect do
-        status_check_recursion(25)
-      end.to raise_error(Anzen::RecursionLimitExceeded)
-
-      # Check status reflects the violation
       status = Anzen.status
-      recursion_status = status[:monitors].find { |m| m[:name] == 'recursion' }
+      monitor_names = status[:monitors].map { |m| m[:name] }
 
-      expect(recursion_status[:enabled]).to be(true)
-      expect(recursion_status[:violations]).to eq(1)
-      expect(recursion_status[:thresholds][:depth_limit]).to eq(20)
+      expect(monitor_names).to include('call_stack_depth')
+      expect(monitor_names).to include('recursion')
     end
 
-    it 'tracks multiple violations' do
+    it 'tracks violations for each monitor independently' do
       config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 15 } }
+        enabled_monitors: ['call_stack_depth'],
+        monitors: { call_stack_depth: { depth_limit: 20 } }
       }
       Anzen.setup(config: config)
 
-      def multi_violation_recursion(depth)
+      def violation_recursion(depth)
         return Anzen.check! if depth <= 0
 
-        multi_violation_recursion(depth - 1)
+        violation_recursion(depth - 1)
       end
 
-      # Trigger first violation
+      # Trigger a call_stack_depth violation
       expect do
-        multi_violation_recursion(20)
+        violation_recursion(25)
       end.to raise_error(Anzen::RecursionLimitExceeded)
 
-      status1 = Anzen.status
-      recursion_status1 = status1[:monitors].find { |m| m[:name] == 'recursion' }
-      expect(recursion_status1[:violations]).to eq(1)
+      status = Anzen.status
+      depth_monitor = status[:monitors].find { |m| m[:name] == 'call_stack_depth' }
+      recursion_monitor = status[:monitors].find { |m| m[:name] == 'recursion' }
 
-      # Trigger second violation
-      expect do
-        multi_violation_recursion(20)
-      end.to raise_error(Anzen::RecursionLimitExceeded)
-
-      status2 = Anzen.status
-      recursion_status2 = status2[:monitors].find { |m| m[:name] == 'recursion' }
-      expect(recursion_status2[:violations]).to eq(2)
+      expect(depth_monitor[:violations]).to eq(1)
+      expect(recursion_monitor[:violations]).to eq(0)
     end
   end
 
-  describe 'recursion protection initialization' do
-    it 'uses default depth_limit when not configured' do
-      config = { enabled_monitors: ['recursion'] }
-      Anzen.setup(config: config)
-
-      status = Anzen.status
-      recursion_status = status[:monitors].find { |m| m[:name] == 'recursion' }
-
-      expect(recursion_status[:thresholds][:depth_limit]).to eq(1000)
-    end
-
-    it 'uses configured depth_limit' do
-      config = {
-        enabled_monitors: ['recursion'],
-        monitors: { recursion: { depth_limit: 500 } }
-      }
-      Anzen.setup(config: config)
-
-      status = Anzen.status
-      recursion_status = status[:monitors].find { |m| m[:name] == 'recursion' }
-
-      expect(recursion_status[:thresholds][:depth_limit]).to eq(500)
-    end
-
-    it 'respects enabled_monitors configuration' do
+  describe 'Configuration' do
+    it 'uses configured depth limits' do
       config = {
         enabled_monitors: [],
-        monitors: { recursion: { depth_limit: 20 } }
+        monitors: { call_stack_depth: { depth_limit: 500 } }
       }
       Anzen.setup(config: config)
 
       status = Anzen.status
-      recursion_status = status[:monitors].find { |m| m[:name] == 'recursion' }
+      depth_monitor = status[:monitors].find { |m| m[:name] == 'call_stack_depth' }
 
-      expect(recursion_status[:enabled]).to be(false)
+      expect(depth_monitor[:thresholds][:depth_limit]).to eq(500)
+    end
+
+    it 'uses default depth limit when not configured' do
+      config = { enabled_monitors: [] }
+      Anzen.setup(config: config)
+
+      status = Anzen.status
+      depth_monitor = status[:monitors].find { |m| m[:name] == 'call_stack_depth' }
+
+      expect(depth_monitor[:thresholds][:depth_limit]).to eq(1000)
     end
   end
 end

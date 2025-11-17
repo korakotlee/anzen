@@ -2,42 +2,32 @@
 
 module Anzen
   module Monitors
-    # Monitor that detects recursion depth exceeding configured threshold
+    # Monitor that detects any recursive method calls (pattern-based)
     #
-    # Tracks call stack depth per-thread and raises RecursionLimitExceeded when
-    # the depth exceeds the configured limit. Supports both direct recursion
-    # (method calling itself) and indirect recursion (method chains forming cycles).
+    # Detects direct recursion (same method repeating) and indirect recursion
+    # (method chains forming cycles). Raises RecursionLimitExceeded immediately
+    # on first recursion detection, with no depth threshold.
+    #
+    # Use case: Strict no-recursion enforcement (e.g., signal handlers, async contexts)
     #
     # @api public
     # @example Basic usage
-    #   monitor = Anzen::Monitors::RecursionMonitor.new(depth_limit: 1000)
+    #   monitor = Anzen::Monitors::RecursionMonitor.new
     #   monitor.enable
-    #   monitor.check!  # Raises RecursionLimitExceeded if depth > 1000
+    #   monitor.check!  # Raises RecursionLimitExceeded if any recursion detected
     class RecursionMonitor
       include Anzen::Monitor
 
-      # Thread-local key for storing call stack depth
-      DEPTH_KEY = :anzen_recursion_depth
-
-      # @return [Integer] configured depth limit
-      attr_reader :depth_limit
+      # Thread-local key for storing call frame tracking
+      FRAME_KEY = :anzen_recursion_frames
 
       # @return [Integer] count of violations detected
       attr_reader :violation_count
 
-      # @return [Time, nil] timestamp of last check
-      attr_reader :last_check
-
       # Initialize RecursionMonitor
-      #
-      # @param depth_limit [Integer] maximum allowed recursion depth (must be positive)
-      # @raise [ConfigurationError] if depth_limit is not a positive integer
-      def initialize(depth_limit: 1000)
-        validate_depth_limit(depth_limit)
-        @depth_limit = depth_limit
+      def initialize
         @enabled = false
         @violation_count = 0
-        @last_check = nil
       end
 
       # Monitor name
@@ -68,46 +58,40 @@ module Anzen
         @enabled
       end
 
-      # Check current recursion depth
+      # Check for recursion pattern
       #
-      # Reads the call stack, counts method frames, and raises RecursionLimitExceeded
-      # if depth exceeds threshold. Blocks count as method frames.
+      # Analyzes the current call stack to detect if any method appears
+      # multiple times (direct recursion) or if there's a cycle in the call chain
+      # (indirect recursion). Raises RecursionLimitExceeded on first detection.
       # Does nothing if monitor is disabled.
       #
       # @return [nil]
-      # @raise [Anzen::RecursionLimitExceeded] if depth exceeds threshold
+      # @raise [Anzen::RecursionLimitExceeded] if recursion pattern detected
       # @raise [Anzen::CheckFailedError] if check infrastructure fails
       def check!
         return nil unless @enabled
 
         begin
-          current_depth = calculate_depth
-          @last_check = Time.now
-
-          if current_depth > @depth_limit
+          if recursion_detected?
             @violation_count += 1
-            raise Anzen::RecursionLimitExceeded.new(current_depth, @depth_limit)
+            raise Anzen::RecursionLimitExceeded.new(current_depth, 1)
           end
 
           nil
         rescue Anzen::RecursionLimitExceeded
           raise
         rescue StandardError => e
-          raise Anzen::CheckFailedError.new(name, 'Failed to calculate recursion depth', e)
+          raise Anzen::CheckFailedError.new(name, 'Failed to detect recursion pattern', e)
         end
       end
 
       # Return current status
       #
-      # @return [Hash] status hash with keys: name, enabled, thresholds, last_check, violations
+      # @return [Hash] status hash with keys: name, enabled, violations
       def status
         {
           name: name,
           enabled: @enabled,
-          thresholds: {
-            depth_limit: @depth_limit
-          },
-          last_check: @last_check,
           violations: @violation_count
         }
       end
@@ -117,31 +101,81 @@ module Anzen
       # @return [String]
       def to_cli
         status_text = @enabled ? 'enabled' : 'disabled'
-        "Recursion monitor (#{status_text}): limit=#{@depth_limit}, violations=#{@violation_count}"
+        "Recursion monitor (#{status_text}): violations=#{@violation_count}"
       end
 
       private
 
-      # Calculate current call stack depth
+      # Detect if current call stack has recursion pattern
       #
-      # Counts method frames in the call stack, excluding frames from Anzen itself.
-      # Uses Kernel.caller to get the call stack.
+      # Uses call context (file:line:method) for application frames to avoid
+      # false positives from framework internals while still detecting cycles.
       #
-      # @return [Integer] current depth
-      def calculate_depth
-        # Kernel.caller returns array of strings like "path/file.rb:123:in `method_name'"
-        # Each frame represents a method call (including blocks)
-        caller.length
+      # @return [Boolean] true if recursion detected
+      def recursion_detected?
+        contexts = extract_call_contexts
+        seen = Set.new
+        contexts.each do |ctx|
+          return true if seen.include?(ctx)
+
+          seen.add(ctx)
+        end
+        false
       end
 
-      # Validate depth_limit configuration
+      # Extract call contexts (file:line:method) from the filtered call stack
       #
-      # @param depth_limit [Integer, Numeric]
-      # @raise [Anzen::ConfigurationError] if invalid
-      def validate_depth_limit(depth_limit)
-        return if depth_limit.is_a?(Numeric) && depth_limit > 0 && depth_limit == depth_limit.to_i
+      # Example: "path/file.rb:123:in `method'" => "path/file.rb:123:method"
+      #
+      # @return [Array<String>]
+      def extract_call_contexts
+        caller
+          .reject { |frame| should_skip_frame?(frame) }
+          .map { |frame| extract_call_context(frame) }
+          .compact
+      end
 
-        raise Anzen::ConfigurationError, "depth_limit must be a positive integer, got #{depth_limit.inspect}"
+      # Determine if a caller frame should be skipped
+      #
+      # Skips frames from:
+      # - Standard library (stdlib paths)
+      # - RSpec and testing framework core
+      # - Ruby's internal code
+      # - Gems/vendor directories (except application code)
+      #
+      # Does NOT skip application code in spec/test/integration directories.
+      #
+      # @param frame [String] caller frame string
+      # @return [Boolean] true if frame should be skipped
+      def should_skip_frame?(frame)
+        # Skip only specific framework/library patterns, not application test code
+        skip_patterns = [
+          %r{/gems/.*\.rb:}, # Bundler gems
+          %r{\.bundle/}, # Bundler paths
+          %r{/lib/ruby/\d+\.\d+}, # Standard library
+          %r{rspec.*gem.*/lib/},       # RSpec gem code (not test files)
+          /<internal:/,                # Ruby internals
+          /method_missing/ # Dynamic method dispatch
+        ]
+
+        skip_patterns.any? { |pattern| frame.match?(pattern) }
+      end
+
+      # Extract file:line:method context from a caller frame
+      def extract_call_context(frame)
+        match = frame.match(/^([^:]+:\d+):in `([^']+)'/)
+        return nil unless match
+
+        file_line = match[1]
+        method = match[2]
+        "#{file_line}:#{method}"
+      end
+
+      # Get current call stack depth for error reporting
+      #
+      # @return [Integer]
+      def current_depth
+        caller.length
       end
     end
   end
