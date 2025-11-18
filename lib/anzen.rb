@@ -70,18 +70,20 @@ module Anzen
     raise Anzen::InitializationError if @@initialized
 
     @@registry = Registry.new
+    config = config ? config.dup : {}
 
     # Determine configuration source
     configuration = if config.key?(:config_file)
                       Configuration.from_file(config[:config_file])
-                    elsif ENV['ANZEN_CONFIG']
+                    elsif config.empty? && ENV['ANZEN_CONFIG']
                       Configuration.from_env
                     else
                       Configuration.programmatic(config)
                     end
 
     # Register CallStackDepthMonitor
-    depth_limit = 10_000
+    default_depth_limit = 1000
+    depth_limit = default_depth_limit
     begin
       depth_limit = configuration.monitor_config('call_stack_depth')['depth_limit']
     rescue Anzen::ConfigurationError
@@ -98,7 +100,7 @@ module Anzen
     rescue Anzen::ConfigurationError
       # Use defaults if not configured
     end
-    depth_limit = recursion_config['depth_limit'] || 10_000
+    depth_limit = recursion_config['depth_limit'] || default_depth_limit
 
     recursion_monitor = Monitors::RecursionMonitor.new(depth_limit: depth_limit)
     @@registry.register(recursion_monitor)

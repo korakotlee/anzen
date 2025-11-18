@@ -221,11 +221,6 @@ RSpec.describe 'Monitor Modularity' do
       }
       Anzen.setup(config: config)
 
-      # Get initial check counts
-      status_before = Anzen.status
-      recursion_before = status_before[:monitors].find { |m| m[:name] == 'recursion' }
-      memory_before = status_before[:monitors].find { |m| m[:name] == 'memory' }
-
       # Run checks
       Anzen.check!
 

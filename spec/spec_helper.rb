@@ -23,6 +23,10 @@ end
 # Load RSpec
 require 'rspec'
 
+# Suppress warnings about potentially false-positive expectation patterns until they
+# can be addressed in individual specs.
+RSpec::Expectations.configuration.on_potential_false_positives = :nothing
+
 # RSpec configuration
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|

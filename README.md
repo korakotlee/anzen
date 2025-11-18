@@ -58,7 +58,7 @@ def risky_algorithm(n)
   risky_algorithm(n - 1) + risky_algorithm(n - 2)
 end
 
-# No need to call check! - monitoring happens in real-time
+# Monitoring happens in real-time
 begin
   result = risky_algorithm(50)  # Safe with Anzen's automatic protection
 rescue Anzen::RecursionLimitExceeded => e

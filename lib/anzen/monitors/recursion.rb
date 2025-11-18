@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'set'
+
 module Anzen
   module Monitors
     # Monitor that detects any recursive method calls (pattern-based)
@@ -24,16 +26,20 @@ module Anzen
       # @return [Integer] count of violations detected
       attr_reader :violation_count
 
+      # @return [String] monitor name used throughout registry/CLI
+      attr_reader :name
+
       # Initialize RecursionMonitor
       #
       # @param depth_limit [Integer] maximum allowed recursion depth (default: 1000)
-      def initialize(depth_limit: 2000)
+      def initialize(depth_limit: 1000)
         @enabled = false
         @violation_count = 0
         @depth_limit = depth_limit
         @last_check = nil
         @trace_point = nil
         @call_stack = nil
+        @name = 'recursion'
       end
 
       #
@@ -114,7 +120,7 @@ module Anzen
       # @return [String]
       def to_cli
         status_text = @enabled ? 'enabled' : 'disabled'
-        "Recursion monitor (#{status_text}): violations=#{@violation_count}"
+        "Recursion monitor (#{status_text}): limit=#{@depth_limit}, violations=#{@violation_count}"
       end
 
       private

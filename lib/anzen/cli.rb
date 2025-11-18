@@ -104,10 +104,7 @@ module Anzen
       status_data = Anzen.status
       monitor = status_data[:monitors].find { |m| m[:name] == monitor_name }
 
-      unless monitor
-        available = status_data[:monitors].map { |m| m[:name] }
-        raise Anzen::MonitorNotFoundError.new(monitor_name)
-      end
+      raise Anzen::MonitorNotFoundError.new(monitor_name) unless monitor
 
       {
         monitor: monitor_name,

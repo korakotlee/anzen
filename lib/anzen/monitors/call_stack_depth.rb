@@ -31,7 +31,7 @@ module Anzen
       #
       # @param depth_limit [Integer] maximum allowed call stack depth (must be positive)
       # @raise [ConfigurationError] if depth_limit is not a positive integer
-      def initialize(depth_limit: 10_000)
+      def initialize(depth_limit: 1000)
         validate_depth_limit(depth_limit)
         @depth_limit = depth_limit
         @enabled = false
