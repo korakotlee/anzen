@@ -49,26 +49,9 @@ Anzen.setup(
 # Your application is now protected!
 ```
 
-### Protection in Action
+## Protection in Action
 
-```ruby
-def risky_algorithm(n)
-  return n if n <= 1
-  # Anzen automatically monitors and prevents excessive recursion and memory usage
-  risky_algorithm(n - 1) + risky_algorithm(n - 2)
-end
-
-# Monitoring happens in real-time
-begin
-  result = risky_algorithm(50)  # Safe with Anzen's automatic protection
-rescue Anzen::RecursionLimitExceeded => e
-  puts "Recursion limit exceeded: #{e.current_depth} > #{e.threshold}"
-  # Handle gracefully instead of crashing
-rescue Anzen::MemoryLimitExceeded => e
-  puts "Memory limit exceeded: #{e.current_memory_mb}MB > #{e.memory_limit_mb}MB"
-  # Clean up and retry with smaller dataset
-end
-```
+See Rails example in [Rails test](doc/rails_test.md)
 
 ## Configuration
 
@@ -113,53 +96,6 @@ Anzen.setup(config: {
 })
 ```
 
-## CLI Commands
-
-Anzen provides command-line tools for monitoring and debugging:
-
-```bash
-# Show protection status
-anzen status
-
-# View configuration
-anzen config
-anzen config memory --format json
-
-# System information
-anzen info
-
-# Help and version
-anzen help
-anzen --version
-```
-
-### Example CLI Output
-
-```bash
-$ anzen status
-Anzen Safety Protection Status
-========================================
-
-Enabled Monitors: recursion, memory
-
-Monitor: recursion
-  Status: enabled
-  Thresholds:
-    depth_limit: 1000
-  Last Check: never
-  Violations Detected: 0
-
-Monitor: memory
-  Status: enabled
-  Thresholds:
-    limit_mb: 512
-    sampling_interval_ms: 100
-  Last Check: never
-  Violations Detected: 0
-
-Total Violations: 0
-Setup Time: 2025-11-17 17:05:02 EST
-```
 
 ## Integration Patterns
 
@@ -232,16 +168,6 @@ end
 - Ensure `bin/anzen` is in PATH or use `bundle exec anzen`
 - Check that the gem is installed: `gem list anzen`
 
-### Debug Mode
-
-Enable verbose logging:
-
-```ruby
-Anzen.setup(config: {
-  # ... normal config ...
-  debug: true  # Future enhancement
-})
-```
 
 ### Performance Tuning
 
@@ -314,9 +240,13 @@ bundle exec rake
 - **Documentation**: Update docs for public API changes
 - **Backwards Compatibility**: Maintain API stability
 
+## Fun Fact
+
+Anzen mean `safety` in Japanese
+
 ## License
 
-Copyright (c) 2025 Korakot Lee. Released under the MIT License. See [LICENSE](./LICENSE) for details.
+Copyright (c) 2025 Korakot Leemakdej. Released under the MIT License. See [LICENSE](./LICENSE) for details.
 
 ## Code of Conduct
 
