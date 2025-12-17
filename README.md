@@ -2,7 +2,9 @@
 
 **Runtime Safety Protection for Ruby Applications**
 
-Anzen prevents catastrophic crashes from recursive call stacks and memory overflow conditions. Deploy with confidence knowing your Ruby applications (Rails, microservices, background jobs) are protected from common runtime failures that can bring down production systems.
+A large codebase is like a giant Boeing 737 Max. You have unit tests and integration tests, but when the production run is in-flight and everyone clearly sees it losing altitude fast without any intention of landing, something is wrong. The captain should be alerted, and the system should self-correct right away.
+
+Anzen acts as that automated safety system. It checks for anomalies during runtime, monitors system integrity, and activates self-healing mechanisms to prevent catastrophic crashes from recursive call stacks and memory overflow conditions. Deploy with confidence knowing your Ruby applications (Rails, microservices, background jobs) are protected from common runtime failures that can bring down production systems.
 
 **Key Benefits:**
 - 🚀 **Zero Code Changes**: Drop-in protection with single initialization
